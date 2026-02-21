@@ -1,3 +1,4 @@
 [object_detection]
 src_url = "rtsp://192.168.0.39:8554/stream"
+mtx_url = "rtsp://192.168.0.154:8554/detections"
 log_level = "trace"

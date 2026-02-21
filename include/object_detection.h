@@ -9,5 +9,6 @@ class ObjectDetection{
         void run();
     private:
         std::string src_url_;
+        std::string mtx_url_;
         Logger logger_;
 };
