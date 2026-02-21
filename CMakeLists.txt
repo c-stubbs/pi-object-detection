@@ -57,7 +57,9 @@ target_include_directories(object_detection_config PUBLIC ./include)
 target_link_libraries(object_detection_config 
     PRIVATE
     tomlplusplus::tomlplusplus
-    logger)
+    logger
+    async_queue
+)
 
 # Add logger library
 add_library(logger INTERFACE)
@@ -65,6 +67,10 @@ target_include_directories(logger INTERFACE ./include)
 target_link_libraries(logger
     INTERFACE
     fmt)
+
+# Add async queue library
+add_library(async_queue INTERFACE)
+target_include_directories(async_queue INTERFACE ./include)
 
 # Install bins
 install(

@@ -1,4 +1,7 @@
 [object_detection]
 src_url = "rtsp://192.168.0.39:8554/stream"
 mtx_url = "rtsp://192.168.0.154:8554/detections"
+model_name = "yolov8n"
+batch_size = 1
+target_fps = 30
 log_level = "trace"
