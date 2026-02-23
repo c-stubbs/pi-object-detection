@@ -71,12 +71,10 @@ void ObjectDetection::run()
 
 void ObjectDetection::preprocessAsync(cv::VideoCapture& capture, std::shared_ptr<ObjectDetection::BatchQueue> preprocessed_batch_queue)
 {
-    int fps = 30; // TODO: make class variable or config
-
     std::vector<cv::Mat> org_frames;
     std::vector<cv::Mat> preproc_frames;
 
-    const bool limit_fps = (fps > 0.0);
+    const bool limit_fps = (target_fps_ > 0.0);
     using clock = std::chrono::steady_clock;
 
     clock::duration frame_interval{};
@@ -85,7 +83,7 @@ void ObjectDetection::preprocessAsync(cv::VideoCapture& capture, std::shared_ptr
     if (limit_fps)
     {
         frame_interval = std::chrono::duration_cast<clock::duration>(
-                std::chrono::duration<double>(1.0 / fps));
+                std::chrono::duration<double>(1.0 / target_fps_));
         next_frame_time = clock::now() + frame_interval;
     }
 
@@ -109,10 +107,10 @@ void ObjectDetection::preprocessAsync(cv::VideoCapture& capture, std::shared_ptr
         }
 
         org_frames.push_back(org_frame);
-        if (org_frames.size() == batch_size)
+        if (org_frames.size() == batch_size_)
         {
             preproc_frames.clear();
-            // TODO: put preprocess logic here
+            reformatFrames(org_frames, preproc_frames);
             preprocessed_batch_queue->push(std::make_pair(org_frames, preproc_frames));
             org_frames.clear();
         }
@@ -124,6 +122,62 @@ void ObjectDetection::preprocessAsync(cv::VideoCapture& capture, std::shared_ptr
 
     }
 }
+
+void ObjectDetection::reformatFrames(const std::vector<cv::Mat>& org_frames,
+                                         std::vector<cv::Mat>& preprocessed_frames)                                         
+{
+    preprocessed_frames.clear();
+    preprocessed_frames.reserve(org_frames.size());
+
+    for (const auto &src_bgr : org_frames)
+    {
+        if (src_bgr.empty())
+        {
+            preprocessed_frames.emplace_back();
+            continue;
+        }
+        cv::Mat rgb;
+
+        // 1) Convert to RGB
+        if (src_bgr.channels() == 3)
+        {
+            cv::cvtColor(src_bgr, rgb, cv::COLOR_BGR2RGB);
+        }
+        else if (src_bgr.channels() == 4)
+        {
+            cv::cvtColor(src_bgr, rgb, cv::COLOR_BGRA2RGB);
+        }
+        else if (src_bgr.channels() == 1)
+        {
+            cv::cvtColor(src_bgr, rgb, cv::COLOR_GRAY2RGB);
+        }
+        else
+        {
+            std::vector<cv::Mat> ch(3, src_bgr);
+            cv::merge(ch, rgb);
+            cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB);
+        }
+
+        // 2) Resize to Target
+        if (rgb.cols != model_input_width_ || rgb.rows != model_input_height_)
+        {
+            cv::resize(rgb, rgb, cv::Size(model_input_width_,
+                                          model_input_height_),
+                                          0.0, 0.0, cv::INTER_AREA);
+        }
+
+        // 3) Ensure contiguous buffer
+        if (!rgb.isContinuous())
+        {
+            rgb = rgb.clone();
+        }
+
+        // 4) Push to output vector
+        preprocessed_frames.push_back(std::move(rgb));
+    }
+
+}
+
 
 void ObjectDetection::inferAsync()
 {
@@ -139,19 +193,24 @@ void ObjectDetection::initializeHailo()
 {
     logger_.info("Initializing HAILO device.");
 
-    this->vdevice = hailort::VDevice::create().expect("Failed to create VDevice");
-    this->batch_size = batch_size_;
-    this->infer_model = vdevice->create_infer_model(model_name_).expect("Failed to create infer model");
-    this->infer_model->set_batch_size(batch_size);
+    this->vdevice_ = hailort::VDevice::create().expect("Failed to create VDevice");
+    this->infer_model_ = vdevice_->create_infer_model(model_name_).expect("Failed to create infer model");
+    this->infer_model_->set_batch_size(batch_size_);
     
-    for (auto& output_vstream_info : this->infer_model->hef().get_output_vstream_infos().release())
+    auto model_input_shape = this->infer_model_->hef().get_input_vstream_infos().release()[0].shape;
+    this->model_input_width_ = static_cast<int>(model_input_shape.width);
+    this->model_input_height_ = static_cast<int>(model_input_shape.height);
+
+
+    
+    for (auto& output_vstream_info : this->infer_model_->hef().get_output_vstream_infos().release())
     {
         std::string name(output_vstream_info.name);
-        this->output_vstream_info_by_name[name] = output_vstream_info;
+        this->output_vstream_info_by_name_[name] = output_vstream_info;
     }
 
-    this->configured_infer_model = this->infer_model->configure().expect("Failed to create configured infer model");
-    this->multiple_bindings = std::vector<hailort::ConfiguredInferModel::Bindings>();
+    this->configured_infer_model_ = this->infer_model_->configure().expect("Failed to create configured infer model");
+    this->multiple_bindings_ = std::vector<hailort::ConfiguredInferModel::Bindings>();
     
     logger_.info("HAILO device initialized.");
 }
