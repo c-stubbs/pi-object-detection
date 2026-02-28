@@ -38,13 +38,12 @@ target_include_directories(${PROJECT_NAME}
     ${GST_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} 
     PRIVATE
-    HailoRT::libhailort 
-    Threads::Threads
     tomlplusplus::tomlplusplus
     ${OpenCV_LIBS}
     object_detection_config
     logger
-    ${GST_LIBRARIES})
+    ${GST_LIBRARIES}
+    inference)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     CONFIG_DIR="${CONFIG_DIR}")
 
@@ -58,7 +57,6 @@ target_link_libraries(object_detection_config
     PRIVATE
     tomlplusplus::tomlplusplus
     logger
-    async_queue
 )
 
 # Add logger library
@@ -71,6 +69,20 @@ target_link_libraries(logger
 # Add async queue library
 add_library(async_queue INTERFACE)
 target_include_directories(async_queue INTERFACE ./include)
+
+# Add inference library
+add_library(inference)
+target_sources(inference
+    PRIVATE
+    src/inference.cpp)
+target_include_directories(inference PUBLIC ./include)
+target_link_libraries(inference
+    PRIVATE 
+    HailoRT::libhailort 
+    Threads::Threads
+    ${OpenCV_LIBS}
+    async_queue
+)
 
 # Install bins
 install(
