@@ -6,6 +6,9 @@
 
 #include "object_detection.h"
 
+#include "hailo_apps/cpp/common/toolbox.hpp"
+#include "hailo_apps/cpp/common/hailo_infer.hpp"  
+
 ObjectDetection::ObjectDetection(ObjectDetectionConfig config)
 {
     logger_ = Logger("ObjectDetection", config.log_level_);
@@ -16,8 +19,6 @@ ObjectDetection::ObjectDetection(ObjectDetectionConfig config)
     model_name_ = config.model_name_;
     batch_size_ = config.batch_size_;
     target_fps_ = config.target_fps_;
-
-    initializeHailo();
 }
 
 void ObjectDetection::run()
@@ -188,30 +189,3 @@ void ObjectDetection::postprocessAsync()
 {
 
 }
-
-void ObjectDetection::initializeHailo()
-{
-    logger_.info("Initializing HAILO device.");
-
-    this->vdevice_ = hailort::VDevice::create().expect("Failed to create VDevice");
-    this->infer_model_ = vdevice_->create_infer_model(model_name_).expect("Failed to create infer model");
-    this->infer_model_->set_batch_size(batch_size_);
-    
-    auto model_input_shape = this->infer_model_->hef().get_input_vstream_infos().release()[0].shape;
-    this->model_input_width_ = static_cast<int>(model_input_shape.width);
-    this->model_input_height_ = static_cast<int>(model_input_shape.height);
-
-
-    
-    for (auto& output_vstream_info : this->infer_model_->hef().get_output_vstream_infos().release())
-    {
-        std::string name(output_vstream_info.name);
-        this->output_vstream_info_by_name_[name] = output_vstream_info;
-    }
-
-    this->configured_infer_model_ = this->infer_model_->configure().expect("Failed to create configured infer model");
-    this->multiple_bindings_ = std::vector<hailort::ConfiguredInferModel::Bindings>();
-    
-    logger_.info("HAILO device initialized.");
-}
-

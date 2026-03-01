@@ -14,7 +14,7 @@ target_sources(hailo-apps-cpp-common
     hailo-apps/hailo_apps/cpp/common/toolbox.cpp)
 target_include_directories(hailo-apps-cpp-common
     PUBLIC
-    hailo-apps/hailo_apps/cpp/common)
+    hailo-apps/)
 target_link_libraries(hailo-apps-cpp-common
     PRIVATE
     HailoRT::libhailort
