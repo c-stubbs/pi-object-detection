@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.31)
 project(object-detection)
 
 include(GNUInstallDirs)
@@ -44,7 +44,8 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     object_detection_config
     logger
-    ${GST_LIBRARIES})
+    ${GST_LIBRARIES}
+    hailo-apps-cpp-common)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     CONFIG_DIR="${CONFIG_DIR}")
 
@@ -71,6 +72,8 @@ target_link_libraries(logger
 # Add async queue library
 add_library(async_queue INTERFACE)
 target_include_directories(async_queue INTERFACE ./include)
+
+add_subdirectory(external)
 
 # Install bins
 install(
