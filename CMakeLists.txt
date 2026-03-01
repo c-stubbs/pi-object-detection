@@ -15,8 +15,6 @@ set(CMAKE_C_COMPILER=clang)
 set(CMAKE_CXX_COMPILER=clang++)
 
 # find requried packages
-find_package(Threads)
-find_package(HailoRT REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(spdlog REQUIRED)
@@ -38,8 +36,6 @@ target_include_directories(${PROJECT_NAME}
     ${GST_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} 
     PRIVATE
-    HailoRT::libhailort 
-    Threads::Threads
     tomlplusplus::tomlplusplus
     ${OpenCV_LIBS}
     object_detection_config

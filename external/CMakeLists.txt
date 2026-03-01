@@ -1,7 +1,11 @@
 include(FetchContent)
 
+message("Fetching Nlohmann JSON...")
 FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
 FetchContent_MakeAvailable(json)
+
+find_package(Threads)
+find_package(HailoRT REQUIRED)
 
 add_library(hailo-apps-cpp-common)
 target_sources(hailo-apps-cpp-common
