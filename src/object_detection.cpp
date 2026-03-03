@@ -2,12 +2,11 @@
 
 #include <cstring>
 
-#include "hailo/hailort.hpp"
-
 #include "object_detection.h"
 
 #include "hailo_apps/cpp/common/toolbox.hpp"
-#include "hailo_apps/cpp/common/hailo_infer.hpp"  
+#include "hailo_apps/cpp/common/hailo_infer.hpp"
+#include "hailo_apps/cpp/object_detection/utils/utils.hpp"
 
 ObjectDetection::ObjectDetection(ObjectDetectionConfig config)
 {
@@ -19,11 +18,14 @@ ObjectDetection::ObjectDetection(ObjectDetectionConfig config)
     model_name_ = config.model_name_;
     batch_size_ = config.batch_size_;
     target_fps_ = config.target_fps_;
+    
+    framerate_ = static_cast<double>(target_fps_);
+    batch_size_st_ = static_cast<size_t>(batch_size_);
 }
 
 void ObjectDetection::run()
 {
-    cv::VideoCapture cap;
+    // cv::VideoCapture cap;
     int fps = 30;
 
     std::string pipeline("appsrc ! videoconvert" 
@@ -40,7 +42,7 @@ void ObjectDetection::run()
     }
 
     // Use ffmpeg backend. Could also use gstreamer but ffmpeg requires less thinking on my part.
-    if (!cap.open(src_url_, cv::CAP_FFMPEG))
+    if (!cap_.open(src_url_, cv::CAP_FFMPEG))
     {
         logger_.error("Cannot open RTSP stream");
     }
@@ -50,7 +52,7 @@ void ObjectDetection::run()
     while (true)
     {
         // Read in frame from RTSP source
-        if (!cap.read(frame))
+        if (!cap_.read(frame))
         {
             logger_.error("Failed to read frame");
             break;
@@ -66,126 +68,128 @@ void ObjectDetection::run()
         // Write the frame to RTSP
         wrt.write(frame);
     }
-    cap.release();
+    cap_.release();
     cv::destroyAllWindows();
 }
 
-void ObjectDetection::preprocessAsync(cv::VideoCapture& capture, std::shared_ptr<ObjectDetection::BatchQueue> preprocessed_batch_queue)
-{
-    std::vector<cv::Mat> org_frames;
-    std::vector<cv::Mat> preproc_frames;
+hailo_status ObjectDetection::initializeHailo()
+{ 
+    // TODO: manually set the input_type here
 
-    const bool limit_fps = (target_fps_ > 0.0);
-    using clock = std::chrono::steady_clock;
+    model = std::make_unique<HailoInfer>(model_name_, batch_size_);
 
-    clock::duration frame_interval{};
-    clock::time_point next_frame_time{};
-
-    if (limit_fps)
+    // Lambda for preprocessing
+    auto preprocess_cb = [this](auto org_frames, auto preproc_frames, auto target_width, auto target_height)
     {
-        frame_interval = std::chrono::duration_cast<clock::duration>(
-                std::chrono::duration<double>(1.0 / target_fps_));
-        next_frame_time = clock::now() + frame_interval;
+        this->preprocessCallback(org_frames, preproc_frames, target_width, target_height);
+    };
+
+    // Lambda for post processing
+    auto post_cb = [this](auto frame_to_draw, auto output_data_and_infos)
+    {
+        this->postprocessCallback(frame_to_draw, output_data_and_infos, this->vis_params);
+    };
+
+    auto preprocess_thread = std::async(hailo_utils::run_preprocess,
+                                        std::ref(input_path),
+                                        std::ref(model_name_),
+                                        std::ref(*model),
+                                        std::ref(input_type_),
+                                        std::ref(cap_),
+                                        std::ref(batch_size_st_),
+                                        std::ref(framerate_),
+                                        preprocessed_batch_queue,
+                                        preprocess_cb);
+
+    hailo_utils::ModelInputQueuesMap input_queues = {
+        { model->get_infer_model()->get_input_names().at(0), preprocessed_batch_queue }
+    };
+    auto inference_thread = std::async(hailo_utils::run_inference_async,
+                                    std::ref(*model),
+                                    std::ref(inference_time_),
+                                    std::ref(input_queues),
+                                    results_queue);
+
+    auto output_parser_thread = std::async(hailo_utils::run_post_process,
+                                std::ref(input_type_),
+                                std::ref(org_height_),
+                                std::ref(org_width_),
+                                std::ref(frame_count_),
+                                std::ref(cap_),
+                                std::ref(framerate_),
+                                std::ref(batch_size_st_),
+                                std::ref(save_stream_output_),
+                                std::ref(output_dir_),
+                                std::ref(output_resolution_),
+                                results_queue,
+                                post_cb);
+
+    hailo_status status = wait_and_check_threads(
+        preprocess_thread,    "Preprocess",
+        inference_thread,     "Inference",
+        output_parser_thread, "Postprocess "
+    );
+    if (HAILO_SUCCESS != status) {
+        return status;
     }
 
-    while (true)
-    {
-        if (limit_fps)
-        {
-            auto now = clock::now();
-            if (now < next_frame_time)
-            {
-                std::this_thread::sleep_until(next_frame_time);
-            }
-        }
-
-        cv::Mat org_frame;
-        capture >> org_frame;
-        if (org_frame.empty())
-        {
-            preprocessed_batch_queue->stop();
-            break;
-        }
-
-        org_frames.push_back(org_frame);
-        if (org_frames.size() == batch_size_)
-        {
-            preproc_frames.clear();
-            reformatFrames(org_frames, preproc_frames);
-            preprocessed_batch_queue->push(std::make_pair(org_frames, preproc_frames));
-            org_frames.clear();
-        }
-
-        if (limit_fps)
-        {
-            next_frame_time += frame_interval;
-        }
-
-    }
+    return HAILO_SUCCESS;
 }
 
-void ObjectDetection::reformatFrames(const std::vector<cv::Mat>& org_frames,
-                                         std::vector<cv::Mat>& preprocessed_frames)                                         
+// Task-specific preprocessing callback
+void ObjectDetection::preprocessCallback(const std::vector<cv::Mat>& org_frames,
+                         std::vector<cv::Mat>& preprocessed_frames,
+                         uint32_t target_width, uint32_t target_height)
 {
     preprocessed_frames.clear();
     preprocessed_frames.reserve(org_frames.size());
 
-    for (const auto &src_bgr : org_frames)
-    {
-        if (src_bgr.empty())
-        {
+    for (const auto &src_bgr : org_frames) {
+        // Skip invalid frames but keep vector alignment (optional: push empty)
+        if (src_bgr.empty()) {
             preprocessed_frames.emplace_back();
             continue;
         }
         cv::Mat rgb;
-
         // 1) Convert to RGB
-        if (src_bgr.channels() == 3)
-        {
+        if (src_bgr.channels() == 3) {
             cv::cvtColor(src_bgr, rgb, cv::COLOR_BGR2RGB);
-        }
-        else if (src_bgr.channels() == 4)
-        {
+        } else if (src_bgr.channels() == 4) {
+            // If someone passed BGRA, drop alpha
             cv::cvtColor(src_bgr, rgb, cv::COLOR_BGRA2RGB);
-        }
-        else if (src_bgr.channels() == 1)
-        {
+        } else if (src_bgr.channels() == 1) {
+            // If grayscale sneaks in, promote to 3 channels
             cv::cvtColor(src_bgr, rgb, cv::COLOR_GRAY2RGB);
-        }
-        else
-        {
+        } else {
+            // Fallback: force 3 channels by duplicating/merging
             std::vector<cv::Mat> ch(3, src_bgr);
             cv::merge(ch, rgb);
-            cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB);
+            cv::cvtColor(rgb, rgb, cv::COLOR_BGR2RGB); // ensure RGB order
         }
-
-        // 2) Resize to Target
-        if (rgb.cols != model_input_width_ || rgb.rows != model_input_height_)
-        {
-            cv::resize(rgb, rgb, cv::Size(model_input_width_,
-                                          model_input_height_),
-                                          0.0, 0.0, cv::INTER_AREA);
+        // 2) Resize to target
+        if (rgb.cols != static_cast<int>(target_width) || rgb.rows != static_cast<int>(target_height)) {
+            cv::resize(rgb, rgb, cv::Size(static_cast<int>(target_width),
+                                          static_cast<int>(target_height)),
+                       0.0, 0.0, cv::INTER_AREA);
         }
-
         // 3) Ensure contiguous buffer
-        if (!rgb.isContinuous())
-        {
+        if (!rgb.isContinuous()) {
             rgb = rgb.clone();
         }
-
         // 4) Push to output vector
         preprocessed_frames.push_back(std::move(rgb));
     }
-
 }
 
-
-void ObjectDetection::inferAsync()
+// Task-specific postprocessing callback
+void ObjectDetection::postprocessCallback(
+    cv::Mat &frame_to_draw,
+    const std::vector<std::pair<uint8_t*, hailo_vstream_info_t>> &output_data_and_infos,
+    const hailo_utils::VisualizationParams &vis)
 {
+    const size_t class_count = 80;
+    auto bboxes = parse_nms_data(output_data_and_infos[0].first, class_count); // TODO: this is in utils
 
+    draw_bounding_boxes(frame_to_draw, bboxes, vis);
 }
 
-void ObjectDetection::postprocessAsync()
-{
-
-}
