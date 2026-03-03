@@ -11,10 +11,13 @@ add_library(hailo-apps-cpp-common)
 target_sources(hailo-apps-cpp-common
     PRIVATE
     hailo-apps/hailo_apps/cpp/common/hailo_infer.cpp
-    hailo-apps/hailo_apps/cpp/common/toolbox.cpp)
+    hailo-apps/hailo_apps/cpp/common/toolbox.cpp
+    hailo-apps/hailo_apps/cpp/object_detection/utils/utils.cpp)
 target_include_directories(hailo-apps-cpp-common
     PUBLIC
-    hailo-apps/)
+    hailo-apps/
+    hailo-apps/hailo_apps/cpp/common/
+)
 target_link_libraries(hailo-apps-cpp-common
     PRIVATE
     HailoRT::libhailort

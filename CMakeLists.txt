@@ -25,7 +25,7 @@ pkg_check_modules(GST REQUIRED
     gstreamer-app-1.0
     gstreamer-rtsp-server-1.0)
 
-# add main executable
+# Add main executable
 add_executable(${PROJECT_NAME} 
     src/main.cpp
     src/object_detection.cpp)
