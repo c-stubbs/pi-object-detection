@@ -1,6 +1,9 @@
+#include <chrono>
 #include <opencv2/opencv.hpp>
 
 #include <cstring>
+#include <opencv2/videoio.hpp>
+#include <thread>
 
 #include "object_detection.h"
 
@@ -18,14 +21,19 @@ ObjectDetection::ObjectDetection(ObjectDetectionConfig config)
     model_name_ = config.model_name_;
     batch_size_ = config.batch_size_;
     target_fps_ = config.target_fps_;
-    
-    framerate_ = static_cast<double>(target_fps_);
-    batch_size_st_ = static_cast<size_t>(batch_size_);
+
+    first_frame_received_ = false;
+
+    std::thread([this](){this->initializeHailo();}).detach();
+}
+
+ObjectDetection::~ObjectDetection()
+{
+    kill = true;
 }
 
 void ObjectDetection::run()
 {
-    // cv::VideoCapture cap;
     int fps = 30;
 
     std::string pipeline("appsrc ! videoconvert" 
@@ -34,14 +42,13 @@ void ObjectDetection::run()
                          " ! video/x-h264,profile=baseline"
                          " ! rtspclientsink location=rtsp://" + mtx_url_ + ":8554/test");
  
-    cv::VideoWriter wrt(pipeline, cv::CAP_GSTREAMER, 0, fps, cv::Size(720, 480), true);
+    writer_ = cv::VideoWriter(pipeline, cv::CAP_GSTREAMER, 0, fps, cv::Size(720, 480), true);
 
-    if (!wrt.isOpened())
+    if (!writer_.isOpened())
     {
         logger_.error("Cannot open RTSP writer");
     }
 
-    // Use ffmpeg backend. Could also use gstreamer but ffmpeg requires less thinking on my part.
     if (!cap_.open(src_url_, cv::CAP_FFMPEG))
     {
         logger_.error("Cannot open RTSP stream");
@@ -51,30 +58,37 @@ void ObjectDetection::run()
 
     while (true)
     {
-        // Read in frame from RTSP source
         if (!cap_.read(frame))
         {
             logger_.error("Failed to read frame");
             break;
         }
 
+        first_frame_received_ = true;
+        // TODO: put the frame into the inference queue
+
         logger_.trace("Frame Info: {}x{}", frame.rows, frame.cols);
-        // ESC to quit
         if (cv::waitKey(1) == 27)
             break;
-
-        // TODO: Run object detection here
-
-        // Write the frame to RTSP
-        wrt.write(frame);
     }
     cap_.release();
     cv::destroyAllWindows();
 }
 
 hailo_status ObjectDetection::initializeHailo()
-{ 
+{
+    // Loop here until the first frame has been received
+    while (!first_frame_received_)
+    {
+        if (kill)
+        {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
+
     // TODO: manually set the input_type here
+    input_type_.is_video = true;
 
     model = std::make_unique<HailoInfer>(model_name_, batch_size_);
 
@@ -96,14 +110,15 @@ hailo_status ObjectDetection::initializeHailo()
                                         std::ref(*model),
                                         std::ref(input_type_),
                                         std::ref(cap_),
-                                        std::ref(batch_size_st_),
-                                        std::ref(framerate_),
+                                        std::ref(batch_size_),
+                                        std::ref(target_fps_),
                                         preprocessed_batch_queue,
                                         preprocess_cb);
 
     hailo_utils::ModelInputQueuesMap input_queues = {
         { model->get_infer_model()->get_input_names().at(0), preprocessed_batch_queue }
     };
+
     auto inference_thread = std::async(hailo_utils::run_inference_async,
                                     std::ref(*model),
                                     std::ref(inference_time_),
@@ -116,14 +131,15 @@ hailo_status ObjectDetection::initializeHailo()
                                 std::ref(org_width_),
                                 std::ref(frame_count_),
                                 std::ref(cap_),
-                                std::ref(framerate_),
-                                std::ref(batch_size_st_),
+                                std::ref(target_fps_),
+                                std::ref(batch_size_),
                                 std::ref(save_stream_output_),
                                 std::ref(output_dir_),
                                 std::ref(output_resolution_),
                                 results_queue,
                                 post_cb);
 
+    // TODO: does this function block?
     hailo_status status = wait_and_check_threads(
         preprocess_thread,    "Preprocess",
         inference_thread,     "Inference",
@@ -188,8 +204,11 @@ void ObjectDetection::postprocessCallback(
     const hailo_utils::VisualizationParams &vis)
 {
     const size_t class_count = 80;
-    auto bboxes = parse_nms_data(output_data_and_infos[0].first, class_count); // TODO: this is in utils
+    auto bboxes = parse_nms_data(output_data_and_infos[0].first, class_count);
 
     draw_bounding_boxes(frame_to_draw, bboxes, vis);
+
+    // Write the frame to RTSP
+    writer_.write(frame_to_draw);
 }
 

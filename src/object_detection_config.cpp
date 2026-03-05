@@ -6,7 +6,7 @@ ObjectDetectionConfig::ObjectDetectionConfig(toml::v3::ex::parse_result config)
     mtx_url_ = config["object_detection"]["mtx_url"].value_or(std::string("127.0.0.1"));
     model_name_ = config["object_detection"]["model_name"].value_or(std::string("yolov8n"));
     batch_size_ = config["object_detection"]["batch_size"].value_or(1);
-    target_fps_ = config["object_detection"]["target_fps"].value_or(30);
+    target_fps_ = config["object_detection"]["target_fps"].value_or(30.0);
     log_level_ = config["object_detection"]["log_level"].value_or(std::string("error"));
     
     Logger logger("ObjectDetectionConfig", "info");

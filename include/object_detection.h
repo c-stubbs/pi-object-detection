@@ -12,36 +12,38 @@
 class ObjectDetection{
     public:
         ObjectDetection(ObjectDetectionConfig config);
+        ~ObjectDetection();
         void run();
-        using BatchQueue = AsyncQueue<std::pair<std::vector<cv::Mat>, std::vector<cv::Mat>>>;
+        // using BatchQueue = AsyncQueue<std::pair<std::vector<cv::Mat>, std::vector<cv::Mat>>>;
     
     private:
         // Config
         std::string src_url_;
         std::string mtx_url_;
-        int batch_size_;
+        size_t batch_size_;
         std::string model_name_;
-        int target_fps_;    
+        double target_fps_;    
 
         Logger logger_;
 
-        // Misc
+        // Misc TODO: clean all of this up
         cv::VideoCapture cap_;
+        cv::VideoWriter writer_;
         std::chrono::duration<double> inference_time_; 
-        int model_input_width_;
-        int model_input_height_;
         bool save_stream_output_ = false;
         std::string output_dir_ = "./";
         std::string output_resolution_ = "720x480";
-        double org_height_;
-        double org_width_;
+        double org_height_; // should be fine to be unset
+        double org_width_; // should be fine to be unset
         size_t frame_count_;
         std::unique_ptr<HailoInfer> model;
         std::string input_path; // remove need for this
         hailo_utils::InputType input_type_;
-        double framerate_;
-        size_t batch_size_st_;
         hailo_utils::VisualizationParams vis_params;
+
+        // State tracking bool
+        std::atomic<bool> first_frame_received_ = false;
+        std::atomic<bool> kill = false;
 
         static constexpr size_t MAX_QUEUE_SIZE = 60;
 

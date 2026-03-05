@@ -9,8 +9,8 @@ class ObjectDetectionConfig {
         std::string src_url_;
         std::string mtx_url_;
         std::string model_name_;
-        int batch_size_;
-        int target_fps_;
+        size_t batch_size_;
+        double target_fps_;
         std::string log_level_;
 
 };
