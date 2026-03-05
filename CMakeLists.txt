@@ -11,6 +11,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 set(CMAKE_C_COMPILER=clang)
 set(CMAKE_CXX_COMPILER=clang++)
 
@@ -80,5 +82,11 @@ install(
 # Install configs
 install(
     DIRECTORY config/
+    DESTINATION config
+)
+
+# Install hailo-apps configs
+install(
+    DIRECTORY external/hailo-apps/hailo_apps/config/
     DESTINATION config
 )
