@@ -23,24 +23,23 @@ ObjectDetection::ObjectDetection(ObjectDetectionConfig config)
     target_fps_ = config.target_fps_;
 
     first_frame_received_ = false;
-
-    std::thread([this](){this->initializeHailo();}).detach();
 }
 
 ObjectDetection::~ObjectDetection()
 {
-    kill = true;
+    kill_ = true;
+    cap_.release();
 }
 
 void ObjectDetection::run()
 {
     int fps = 30;
-
+    
     std::string pipeline("appsrc ! videoconvert" 
                          " ! video/x-raw,format=I420" 
                          " ! x264enc speed-preset=ultrafast bitrate=600 key-int-max=60" 
                          " ! video/x-h264,profile=baseline"
-                         " ! rtspclientsink location=rtsp://" + mtx_url_ + ":8554/test");
+                         " ! rtspclientsink location="+ mtx_url_);
  
     writer_ = cv::VideoWriter(pipeline, cv::CAP_GSTREAMER, 0, fps, cv::Size(720, 480), true);
 
@@ -53,100 +52,66 @@ void ObjectDetection::run()
     {
         logger_.error("Cannot open RTSP stream");
     }
-
-    cv::Mat frame;
-
-    while (true)
-    {
-        if (!cap_.read(frame))
-        {
-            logger_.error("Failed to read frame");
-            break;
-        }
-
-        first_frame_received_ = true;
-        // TODO: put the frame into the inference queue
-
-        logger_.trace("Frame Info: {}x{}", frame.rows, frame.cols);
-        if (cv::waitKey(1) == 27)
-            break;
-    }
-    cap_.release();
-    cv::destroyAllWindows();
+ 
+    initializeHailo();
 }
 
 hailo_status ObjectDetection::initializeHailo()
 {
-    // Loop here until the first frame has been received
-    while (!first_frame_received_)
-    {
-        if (kill)
-        {
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-    }
 
-    // TODO: manually set the input_type here
     input_type_.is_video = true;
+    auto model = HailoInfer(model_name_, batch_size_);
 
-    model = std::make_unique<HailoInfer>(model_name_, batch_size_);
+    // --- Preprocessing
 
     // Lambda for preprocessing
-    auto preprocess_cb = [this](auto org_frames, auto preproc_frames, auto target_width, auto target_height)
+    hailo_utils::PreprocessCallback preprocess_cb = [this](const std::vector<cv::Mat>& org_frames, std::vector<cv::Mat>& preproc_frames, auto target_width, auto target_height)
     {
         this->preprocessCallback(org_frames, preproc_frames, target_width, target_height);
     };
 
-    // Lambda for post processing
-    auto post_cb = [this](auto frame_to_draw, auto output_data_and_infos)
+    
+    std::thread([&] ()
     {
-        this->postprocessCallback(frame_to_draw, output_data_and_infos, this->vis_params);
-    };
-
-    auto preprocess_thread = std::async(hailo_utils::run_preprocess,
-                                        std::ref(input_path),
-                                        std::ref(model_name_),
-                                        std::ref(*model),
-                                        std::ref(input_type_),
-                                        std::ref(cap_),
-                                        std::ref(batch_size_),
-                                        std::ref(target_fps_),
-                                        preprocessed_batch_queue,
-                                        preprocess_cb);
+        return hailo_utils::run_preprocess(this->input_path_, this->model_name_, model, this->input_type_, this->cap_, this->batch_size_, this->target_fps_, this->preprocessed_batch_queue, preprocess_cb);
+    }).detach();
 
     hailo_utils::ModelInputQueuesMap input_queues = {
-        { model->get_infer_model()->get_input_names().at(0), preprocessed_batch_queue }
+        { model.get_infer_model()->get_input_names().at(0), this->preprocessed_batch_queue }
     };
 
-    auto inference_thread = std::async(hailo_utils::run_inference_async,
-                                    std::ref(*model),
-                                    std::ref(inference_time_),
-                                    std::ref(input_queues),
-                                    results_queue);
+    // Loop here until the first frame has been received
+    while (!first_frame_received_)
+    {
+        if (kill_)
+        {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    // --- Inference
 
-    auto output_parser_thread = std::async(hailo_utils::run_post_process,
-                                std::ref(input_type_),
-                                std::ref(org_height_),
-                                std::ref(org_width_),
-                                std::ref(frame_count_),
-                                std::ref(cap_),
-                                std::ref(target_fps_),
-                                std::ref(batch_size_),
-                                std::ref(save_stream_output_),
-                                std::ref(output_dir_),
-                                std::ref(output_resolution_),
-                                results_queue,
-                                post_cb);
+    std::thread([&] () 
+    {
+        return hailo_utils::run_inference_async(model, this->inference_time_, input_queues, this->results_queue);
+    }).detach();
 
-    // TODO: does this function block?
-    hailo_status status = wait_and_check_threads(
-        preprocess_thread,    "Preprocess",
-        inference_thread,     "Inference",
-        output_parser_thread, "Postprocess "
-    );
-    if (HAILO_SUCCESS != status) {
-        return status;
+    // --- Post Processing
+
+    // Callback for post processing
+    hailo_utils::PostprocessCallback post_cb = [this](auto frame_to_draw, auto output_data_and_infos)
+    {
+        this->postprocessCallback(frame_to_draw, output_data_and_infos, this->vis_params_);
+    };
+
+    std::thread([&] ()
+    {
+        return hailo_utils::run_post_process(this->input_type_, this->org_height_, this->org_width_, this->frame_count_, this->cap_, this->target_fps_, this->batch_size_, this->save_stream_output_, this->output_dir_, this->output_resolution_, this->results_queue, post_cb);
+    }).detach();
+
+
+    for (;;)
+    {
     }
 
     return HAILO_SUCCESS;
@@ -192,8 +157,11 @@ void ObjectDetection::preprocessCallback(const std::vector<cv::Mat>& org_frames,
         if (!rgb.isContinuous()) {
             rgb = rgb.clone();
         }
+        logger_.info("rgb size: {}x{}", rgb.cols, rgb.rows);
         // 4) Push to output vector
         preprocessed_frames.push_back(std::move(rgb));
+        logger_.info("preprocessed_frames size: {}", preprocessed_frames.size());
+        first_frame_received_ = true;
     }
 }
 

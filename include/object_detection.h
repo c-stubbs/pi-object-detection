@@ -9,6 +9,8 @@
 #include "logger.h"
 #include "async_queue.h"
 
+constexpr size_t MAX_QUEUE_SIZE = 60;
+
 class ObjectDetection{
     public:
         ObjectDetection(ObjectDetectionConfig config);
@@ -33,19 +35,18 @@ class ObjectDetection{
         bool save_stream_output_ = false;
         std::string output_dir_ = "./";
         std::string output_resolution_ = "720x480";
-        double org_height_; // should be fine to be unset
-        double org_width_; // should be fine to be unset
+        double org_height_ = 480; // should be fine to be unset
+        double org_width_ = 720; // should be fine to be unset
         size_t frame_count_;
-        std::unique_ptr<HailoInfer> model;
-        std::string input_path; // remove need for this
+//        std::unique_ptr<HailoInfer> model;
+        std::string input_path_; // remove need for this
         hailo_utils::InputType input_type_;
-        hailo_utils::VisualizationParams vis_params;
+        hailo_utils::VisualizationParams vis_params_;
 
         // State tracking bool
         std::atomic<bool> first_frame_received_ = false;
-        std::atomic<bool> kill = false;
+        std::atomic<bool> kill_ = false;
 
-        static constexpr size_t MAX_QUEUE_SIZE = 60;
 
         std::shared_ptr<hailo_utils::BoundedTSQueue<std::pair<std::vector<cv::Mat>, std::vector<cv::Mat>>>> preprocessed_batch_queue =
             std::make_shared<hailo_utils::BoundedTSQueue<std::pair<std::vector<cv::Mat>, std::vector<cv::Mat>>>>(MAX_QUEUE_SIZE);

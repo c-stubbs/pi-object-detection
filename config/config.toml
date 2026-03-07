@@ -2,6 +2,6 @@
 src_url = "rtsp://192.168.0.39:8554/stream"
 mtx_url = "rtsp://192.168.0.154:8554/detections"
 model_name = "/home/chandler/projects/object-detection/resources/models/hailo8/yolov8m.hef"
-batch_size = 1
-target_fps = 30
-log_level = "trace"
+batch_size = 4
+target_fps = 25
+log_level = "error"
