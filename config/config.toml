@@ -1,7 +1,10 @@
 [object_detection]
 src_url = "rtsp://192.168.0.39:8554/stream"
+src_width = 720.0
+src_height = 480.0
 mtx_url = "rtsp://192.168.0.154:8554/detections"
 model_name = "/home/chandler/projects/object-detection/resources/models/hailo8/yolov8m.hef"
-batch_size = 4
-target_fps = 25
-log_level = "error"
+batch_size = 1
+target_fps = 20
+restream_grayscale = true
+log_level = "debug"
