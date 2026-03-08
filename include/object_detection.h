@@ -22,6 +22,7 @@ class ObjectDetection{
         bool setupInference();
         bool setupPostprocessing();
         void keepRunning();
+        std::vector<size_t> processValidObjects(std::vector<std::string> valid_strings);
 
         void preprocessCallback(const std::vector<cv::Mat>& org_frames, std::vector<cv::Mat>& preprocessed_frames, uint32_t target_width, uint32_t target_height);
         void postprocessCallback(cv::Mat& frame_to_draw, const std::vector<std::pair<uint8_t*, hailo_vstream_info_t>>& output_data_and_infos, const hailo_utils::VisualizationParams& vis);
@@ -33,6 +34,7 @@ class ObjectDetection{
         std::string model_name_;
         double target_fps_;
         bool restream_grayscale_;
+        std::vector<size_t> valid_objects_;
 
         Logger logger_;
 

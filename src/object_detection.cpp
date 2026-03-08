@@ -5,6 +5,7 @@
 
 #include "object_detection.h"
 #include "hailo_apps/cpp/object_detection/utils/utils.hpp"
+#include "hailo_apps/cpp/common/labels/coco_eighty.hpp"
 
 ObjectDetection::ObjectDetection(ObjectDetectionConfig config) : model_(config.model_name_, config.batch_size_)
 {
@@ -19,6 +20,7 @@ ObjectDetection::ObjectDetection(ObjectDetectionConfig config) : model_(config.m
     batch_size_ = config.batch_size_;
     target_fps_ = config.target_fps_;
     restream_grayscale_ = config.restream_grayscale_;
+    valid_objects_ = processValidObjects(config.valid_objects_);
 
     kill_ = false;
     
@@ -27,6 +29,7 @@ ObjectDetection::ObjectDetection(ObjectDetectionConfig config) : model_(config.m
     input_type_.is_video = true;
     input_queues_ = {{ model_.get_infer_model()->get_input_names().at(0), preprocessed_batch_queue }};
     save_stream_output_ = false;
+    vis_params_.score_thresh = 0.15;
 }
 
 ObjectDetection::~ObjectDetection()
@@ -140,6 +143,24 @@ void ObjectDetection::keepRunning()
     }
 }
 
+std::vector<size_t> ObjectDetection::processValidObjects(std::vector<std::string> valid_strings)
+{
+    std::vector<size_t> valid_objects;
+    for (auto type : valid_strings)
+    {
+        for (const auto& [class_id, class_name] : common::coco_eighty)
+        {
+            if (type == class_name)
+            {
+                valid_objects.push_back(class_id);
+                logger_.info("Adding detection type {} ({}) to valid objects list", class_id, class_name);
+            }
+        }
+    }
+    return valid_objects;
+
+}
+
 // Task-specific preprocessing callback
 void ObjectDetection::preprocessCallback(const std::vector<cv::Mat>& org_frames,
                          std::vector<cv::Mat>& preprocessed_frames,
@@ -203,6 +224,14 @@ void ObjectDetection::postprocessCallback(
     }
     const size_t class_count = 80;
     auto bboxes = parse_nms_data(output_data_and_infos[0].first, class_count);
+    //std::vector<size_t> class_whitelist = {1, 16, 17};
+    for (auto& box : bboxes)
+    {
+        if (std::find(valid_objects_.begin(), valid_objects_.end(), box.class_id) == valid_objects_.end())
+        {
+            box.bbox.score = 0.0;
+        }
+    }
 
     draw_bounding_boxes(frame_to_draw, bboxes, vis);
 

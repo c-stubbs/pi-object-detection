@@ -11,6 +11,7 @@ ObjectDetectionConfig::ObjectDetectionConfig(toml::v3::ex::parse_result config)
     batch_size_ = config["object_detection"]["batch_size"].value_or(1);
     target_fps_ = config["object_detection"]["target_fps"].value_or(30.0);
     restream_grayscale_ = config["object_detection"]["restream_grayscale"].value_or(true);
+    valid_objects_ = readToVector<std::string>(config["object_detection"]["valid_objects"].as_array());
     log_level_ = config["object_detection"]["log_level"].value_or(std::string("error"));
     
     Logger logger("ObjectDetectionConfig", "info");
@@ -24,5 +25,10 @@ ObjectDetectionConfig::ObjectDetectionConfig(toml::v3::ex::parse_result config)
     logger.info(" -- Batch Size: {}", batch_size_);
     logger.info(" -- Target FPS: {}", target_fps_);
     logger.info(" -- Restream in Grayscale: {}", restream_grayscale_);
+    logger.info(" -- Valid Objects: ");
+    for (auto object : valid_objects_)
+    {
+        logger.info(" ---- Object: {}", object);
+    }
     logger.info(" -- Log Level: {}", log_level_);
 }
