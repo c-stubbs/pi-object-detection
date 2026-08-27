@@ -29,37 +29,34 @@ pkg_check_modules(GST REQUIRED
 
 # Add main executable
 add_executable(${PROJECT_NAME} 
-    src/main.cpp
-    src/object_detection/object_detection.cpp
-    src/api/api.cpp)
-target_include_directories(${PROJECT_NAME} 
-    PUBLIC 
-    ./include/api
-    ./include/logger
-    ./include/object_detection
-    ./include/utils
-    PRIVATE
-    ${GST_INCLUDE_DIRS})
+    src/main.cpp)
+
 target_link_libraries(${PROJECT_NAME} 
     PRIVATE
     tomlplusplus::tomlplusplus
-    ${OpenCV_LIBS}
+    object_detection
     object_detection_config
     logger
-    ${GST_LIBRARIES}
-    hailo-apps-cpp-common)
-target_compile_definitions(${PROJECT_NAME} PRIVATE
+    api)
+
+target_compile_definitions(${PROJECT_NAME} 
+    PRIVATE
     CONFIG_DIR="${CONFIG_DIR}")
 
-# Add Object detection lib
+# Add Object detection config lib
 # TODO: need to move away from centralized CMake file. Things like the 
 #       object_detection_config library would be more natural if the CMakeList
 #       is in a subdir
 add_library(object_detection_config)
+
 target_sources(object_detection_config
     PRIVATE
     src/object_detection/object_detection_config.cpp)
-target_include_directories(object_detection_config PUBLIC ./include/object_detection)
+
+target_include_directories(object_detection_config 
+    PUBLIC 
+    ./include/object_detection)
+
 target_link_libraries(object_detection_config 
     PRIVATE
     tomlplusplus::tomlplusplus
@@ -67,16 +64,59 @@ target_link_libraries(object_detection_config
     async_queue
 )
 
+# Add Object detection lib
+add_library(object_detection)
+
+target_sources(object_detection
+    PRIVATE
+    src/object_detection/object_detection.cpp)
+
+target_include_directories(object_detection 
+    PUBLIC 
+    include/object_detection
+    ${GST_INCLUDE_DIRS}
+    )
+
+target_link_libraries(object_detection
+    PUBLIC
+    ${OpenCV_LIBS}
+    object_detection_config
+    logger
+    ${GST_LIBRARIES}
+    hailo-apps-cpp-common)
+
 # Add logger library
 add_library(logger INTERFACE)
-target_include_directories(logger INTERFACE ./include/logger)
+
+target_include_directories(logger 
+    INTERFACE 
+    ./include/logger)
+
 target_link_libraries(logger
     INTERFACE
     fmt)
 
 # Add async queue library
 add_library(async_queue INTERFACE)
-target_include_directories(async_queue INTERFACE ./include/utils)
+
+target_include_directories(async_queue 
+    INTERFACE 
+    ./include/utils)
+
+# Add API library
+add_library(api)
+
+target_sources(api
+    PRIVATE
+    src/api/api.cpp)
+
+target_include_directories(api 
+    PUBLIC 
+    ./include/api)
+
+target_link_libraries(api
+    PUBLIC
+    cpp-httplib)
 
 add_subdirectory(external)
 

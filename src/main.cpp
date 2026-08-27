@@ -3,9 +3,11 @@
 #include "object_detection_config.h"
 #include "object_detection.h"
 #include "logger.h"
+#include "api.h"
 
 int main()
 {
+    Api api;
     Logger logger("Main", "info");
     logger.info("Starting...");
 
