@@ -8,8 +8,14 @@
 int main()
 {
     Api api;
+    // This is a use-after free bug
+
     Logger logger("Main", "info");
     logger.info("Starting...");
+
+    api.onPutConfidenceThreshold(std::make_unique<std::function<void()>>(
+                [](){std::cout << "temp" << std::endl;}
+                ));
 
     std::string config_dir = CONFIG_DIR;
     std::string config_path = config_dir + std::string("config.toml");
