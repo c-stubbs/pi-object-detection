@@ -30,10 +30,14 @@ pkg_check_modules(GST REQUIRED
 # Add main executable
 add_executable(${PROJECT_NAME} 
     src/main.cpp
-    src/object_detection.cpp)
+    src/object_detection/object_detection.cpp
+    src/api/api.cpp)
 target_include_directories(${PROJECT_NAME} 
     PUBLIC 
-    ./include
+    ./include/api
+    ./include/logger
+    ./include/object_detection
+    ./include/utils
     PRIVATE
     ${GST_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} 
@@ -48,11 +52,14 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     CONFIG_DIR="${CONFIG_DIR}")
 
 # Add Object detection lib
+# TODO: need to move away from centralized CMake file. Things like the 
+#       object_detection_config library would be more natural if the CMakeList
+#       is in a subdir
 add_library(object_detection_config)
 target_sources(object_detection_config
     PRIVATE
-    src/object_detection_config.cpp)
-target_include_directories(object_detection_config PUBLIC ./include)
+    src/object_detection/object_detection_config.cpp)
+target_include_directories(object_detection_config PUBLIC ./include/object_detection)
 target_link_libraries(object_detection_config 
     PRIVATE
     tomlplusplus::tomlplusplus
@@ -62,14 +69,14 @@ target_link_libraries(object_detection_config
 
 # Add logger library
 add_library(logger INTERFACE)
-target_include_directories(logger INTERFACE ./include)
+target_include_directories(logger INTERFACE ./include/logger)
 target_link_libraries(logger
     INTERFACE
     fmt)
 
 # Add async queue library
 add_library(async_queue INTERFACE)
-target_include_directories(async_queue INTERFACE ./include)
+target_include_directories(async_queue INTERFACE ./include/utils)
 
 add_subdirectory(external)
 
