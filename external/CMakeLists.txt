@@ -34,3 +34,8 @@ target_include_directories(headless_opencv
     overrides/
     ${OpenCV_INCLUDE_DIRS}
 )
+
+# cpp-httplib
+add_library(cpp-httplib INTERFACE)
+target_include_directories(cpp-httplib INTERFACE cpp-httplib/)
+

@@ -1,3 +1,6 @@
 [submodule "external/hailo-apps"]
 	path = external/hailo-apps
 	url = https://github.com/hailo-ai/hailo-apps.git
+[submodule "external/cpp-httplib"]
+	path = external/cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib.git
